@@ -1,0 +1,14 @@
+boomi_user: <BOOMI USERNAME>
+boomi_pass: <BOOMI Password>
+boomi_account_id: <BOOMI Account ID>
+boomi_atom_id: <BOOMI Atom ID>
+boomi_process_id: <BOOMI Process ID>
+traffic_db_user: <DB Username>
+traffic_db_pass: <DB Password>
+traffic_db_driver: SQL Server
+traffic_db_server: <DB IP Address>
+traffic_db_dbname: <DB Databasename>
+traffic_event_types: CommBad_On,FlashAny_On,FlashMMU_On,StopTime_On,StuckPreemptAny_On,StuckPreempt_RR_On
+log_level: 5
+updatedb: true
+interval: 30

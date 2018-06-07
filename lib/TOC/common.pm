@@ -191,28 +191,37 @@ sub sql_exec_ns {
     my ($st,$dbh) = @_;
     if ($tocc_updatedb == 1) {
 	
-	sayLog("Sending SQL: $st",DEBUG);
-	my $sql_st = $dbh->prepare($st);
-	$sql_st->execute()
-	    or sayDie("Cannot execute SQL statement $DBI::errstr\n");
-    } else {
-	sayLog("NOT Sending SQL: $st",DEBUG);
+		sayLog("Sending SQL: $st",DEBUG);
+		my $sql_st = $dbh->prepare($st);
+		if (! $sql_st->execute()) {
+		
+			sayLog("Cannot execute SQL statement $DBI::errstr",SEVERE);
+			return 0;
+		}
+	} else {
+		sayLog("NOT Sending SQL: $st",DEBUG);
+
     }
+	return 1;
 }
 
 sub sql_exec_s {
     my ($st,$dbh) = @_;
     sayLog("Sending SQL: $st",DEBUG);
     my $sql_st = $dbh->prepare($st);
-    $sql_st->execute()
-        or sayDie("Cannot execute SQL statement $DBI::errstr\n");
+    if (! $sql_st->execute()) {
+        sayLog("Cannot execute SQL statement $DBI::errstr",SEVERE);
+		return;
+	}
     my @result;
     while ( my $hash_ref = $sql_st->fetchrow_hashref() )
     {
         push @result, {%$hash_ref};
     }
-
-    sayDie("Data fetch terminated by error $DBI::errstr\n") if $DBI::errstr;
+	if ($DBI::errstr) {
+		sayLog("Data fetch terminated by error $DBI::errstr\n",SEVERE);
+		return;
+	}
     return @result;
 }
 
@@ -221,10 +230,10 @@ sub db_connect {
     $tocc_updatedb = $updatedb;
     sayLog("Attempting to Connect to $dsn",DEBUG);
     if (my $dbh = DBI->connect ( "dbi:ODBC:$dsn", $login, $password, {PrintError => 1})) {
-	sayLog("$dsn Connected",INFO);
-	return $dbh;
+		sayLog("$dsn Connected",INFO);
+		return $dbh;
     } 
-    sayLog("connection failed to database $dsn with $login $DBI::errstr\n",SEVERE); 
+    sayLog("connection failed to database $dsn with $login $DBI::errstr",SEVERE); 
     return;
     
 }
@@ -233,8 +242,11 @@ sub db_disconnect {
     my ($dbh,$dsn) = @_;
     sayLog("Attempting to disconnect from $dsn",DEBUG);
     # Disconnect
-    $dbh->disconnect or warn "disconnection failed $DBI::errstr\n";
-    sayLog("$dsn Disconnected",INFO);
+    if ($dbh->disconnect) {
+		sayLog("$dsn Disconnected",INFO);
+	} else {
+		sayLog("disconnection failed $DBI::errstr",SEVERE);
+    }
 }
 
 sub qp {

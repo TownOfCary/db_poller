@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# perl update_land_coords.pl
+# perl db_poller.pl
 #
 #
 
@@ -40,27 +40,37 @@ poll_server();
 sub poll_server {
 	my $dsn = "Driver={$gbl_db_driver};Server=$gbl_db_server;Database=$gbl_db_dbname";
 	$gbl_dbh = db_connect($dsn,$gbl_dblogin,$gbl_dbpassword,$gbl_updatedb);
-
+	while (!$gbl_dbh) {
+		sayLog("Cannot connect to database, waiting $gbl_wait_time seconds to reconnect");
+		waitFor($gbl_wait_time);
+		$gbl_dbh = db_connect($dsn,$gbl_dblogin,$gbl_dbpassword,$gbl_updatedb);
+	}
 	$gbl_need_to_cache_latest = 0;
 	while(1) {
+		
 		my $last_event_id = get_last_event_id();
 		my $latest_event_id = get_last_event_since_from_db($last_event_id); 
-		if ($latest_event_id > $last_event_id) {
-			if (trigger_boomi()) {
-				sayLog("Boomi triggered",INFO);
-				$gbl_need_to_cache_latest= 1;
-			} else {
-				sayLog("Boomi failed to trigger",SEVERE);
-				$gbl_need_to_cache_latest= 0;
+		if ($last_event_id != -1 && $latest_event_id != -1) {
+			if ($latest_event_id > $last_event_id) {
+				sayLog("Update required detected",INFO);
+				if (trigger_boomi()) {
+					sayLog("Boomi triggered",INFO);
+					$gbl_need_to_cache_latest= 1;
+				} else {
+					sayLog("Boomi failed to trigger",SEVERE);
+					$gbl_need_to_cache_latest= 0;
+				}
 			}
-			
-			
-		}
-		if ($gbl_need_to_cache_latest == 1) {
-		#if () {
-			$gbl_need_to_cache_latest = 0;
-			sayLog ("Printing to latest cache",DEBUG);
-			save_latest_event_id($latest_event_id);
+			if ($gbl_need_to_cache_latest == 1) {
+			#if () {
+				$gbl_need_to_cache_latest = 0;
+				sayLog ("Printing to latest cache",DEBUG);
+				save_latest_event_id($latest_event_id);
+			}
+		} else {
+			db_disconnect($gbl_dbh,$dsn);
+			sayLog("database query failed, reconnecting to database");
+			$gbl_dbh = db_connect($dsn,$gbl_dblogin,$gbl_dbpassword,$gbl_updatedb);
 		}
 		sayLog("Waiting $gbl_wait_time seconds",DEBUG);
 		waitFor($gbl_wait_time);
@@ -90,7 +100,8 @@ sub get_global_config_vals {
 	$gbl_wait_time = 1 if ($gbl_wait_time < 1);
 
 	$gbl_log_level = $cfg->param("log_level");
-	$gbl_updatedb = $cfg->param("updatedb") == 'true' ? 1 : 0;
+	$gbl_updatedb = (($cfg->param("updatedb") eq 'true') ? 1 : 0);
+	
 	@gbl_event_types = $cfg->param("traffic_event_types");
 }
 
@@ -125,7 +136,10 @@ sub get_last_event_id {
 #################################
 sub get_last_event_from_db {
 	my @tmp_last_id = sql_exec_s("SELECT MAX(ID) as max_id FROM dbo.EventLog WHERE EventTypeID IN (" . convert_event_types() . ")",$gbl_dbh,1);
-	return int(@tmp_last_id[0]->{max_id});
+	if (@tmp_last_id) {
+		return int(@tmp_last_id[0]->{max_id});
+	} 
+	return -1;
 }
 
 #################################
@@ -137,7 +151,10 @@ sub get_last_event_from_db {
 sub get_last_event_since_from_db {
 	my ($since) = @_;
 	my @tmp_last_id = sql_exec_s("SELECT MAX(ID) as max_id FROM dbo.EventLog WHERE EventTypeID IN (" . convert_event_types() . ") AND ID >= $since",$gbl_dbh,1);
-	return int(@tmp_last_id[0]->{max_id});
+	if (@tmp_last_id) {
+		return int(@tmp_last_id[0]->{max_id});
+	} 
+	return -1;
 }
 
 #################################
@@ -181,12 +198,13 @@ sub trigger_boomi {
 	$per->setAttribute("xmlns","http://api.platform.boomi.com/");
 	#$per->addChild(createProcessPropertyChild("dpp_disregard_last_sync_time","TRUE"));
 	sayLog($per->toString(),5);
-	if ($gbl_updatedb) {
+	if ($gbl_updatedb == 1) {
 		$rest_client->POST("https://api.boomi.com/api/rest/v1/$gbl_boomi_account_id/executeProcess",$per->toString(),$gbl_post_headers);
 		return check_for_api_errors($rest_client);
 	} else {
-		return 1;
+		sayLog("not calling boomi (updatedb off)",INFO);
 	}
+	return 1;
 
 }
 

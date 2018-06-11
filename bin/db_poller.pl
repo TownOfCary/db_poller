@@ -146,15 +146,35 @@ sub get_last_event_from_db {
 # Query the database for the last ID in the data base 
 # correctonding to one of our event types, since the last
 # ID.  This just shortens the query time, but it's not really
-# logically any different than get_last_event_from_db
+# logically any different than get_last_event_from_db.  If there
+# are a lot of events coming in, we want to wait until
+# the system quiesces.  We will wait a second to see if
+# any more events come in, and continue this until
+# no more events are coming in.  
 #################################
 sub get_last_event_since_from_db {
 	my ($since) = @_;
-	my @tmp_last_id = sql_exec_s("SELECT MAX(ID) as max_id FROM dbo.EventLog WHERE EventTypeID IN (" . convert_event_types() . ") AND ID >= $since",$gbl_dbh,1);
-	if (@tmp_last_id) {
-		return int(@tmp_last_id[0]->{max_id});
+	my $last_event_prev = $since;
+	my $last_event_curr = -1;
+	while ($last_event_prev != $last_event_curr) {
+		if ($last_event_curr != -1) {
+			$last_event_prev = $last_event_curr;
+		}
+		my @tmp_last_id = sql_exec_s("SELECT MAX(ID) as max_id FROM dbo.EventLog WHERE EventTypeID IN (" . convert_event_types() . ") AND ID >= $last_event_prev",$gbl_dbh,1);
+		if (@tmp_last_id) {
+			$last_event_curr = int(@tmp_last_id[0]->{max_id});
+		} else {
+			return -1;
+		}
+		if ($last_event_prev != $last_event_curr) {
+			sayLog("Waiting a sec to ensure the system is quiesced",INFO);
+			waitFor(1);
+		} else {
+			sayLog("nothing to see here... move along.",INFO);
+		}
 	} 
-	return -1;
+
+	return $last_event_curr;
 }
 
 #################################
